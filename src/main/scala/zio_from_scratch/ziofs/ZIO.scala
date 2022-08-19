@@ -1,6 +1,7 @@
 package jaackotorus
 package zio_from_scratch.ziofs
 
+import scala.annotation.targetName
 import scala.concurrent.ExecutionContext
 
 trait Fiber[+A]:
@@ -27,7 +28,36 @@ class FiberImpl[A](zio: ZIO[A]) extends Fiber[A]:
       }
 
 sealed trait ZIO[+A] { self =>
-  final def run(callback: A => Unit): Unit = ???
+  final def run(callback: A => Unit): Unit =
+    type Erased = ZIO[Any]
+    type Cont   = Any => Erased
+
+    val stack = scala.collection.mutable.Stack[Cont]()
+
+    val curZIO = self
+
+    var looping = true
+
+    while looping do
+      curZIO match
+        case ZIO.Succeed(value) =>
+          callback(value)
+
+        case ZIO.Effect(f) =>
+          callback(f())
+
+        case ZIO.FlatMap(az, f) =>
+          az.run { a =>
+            f(a).run(callback)
+          }
+
+        case ZIO.Async(register) =>
+          register(callback)
+
+        case ZIO.Fork(zio) =>
+          val fiber = FiberImpl(zio)
+          fiber.start()
+          callback(fiber)
 
   def flatMap[B](f: A => ZIO[B]): ZIO[B] =
     ZIO.FlatMap(self, f)
@@ -73,22 +103,8 @@ object ZIO:
   def succeed[A](value: => A): ZIO[A]                         = ZIO.Effect(() => value)
   def async[A](register: (complete: A => Any) => Any): ZIO[A] = ZIO.Async(register)
 
-  case class Succeed[A](value: A) extends ZIO[A]:
-    override def run(callback: A => Unit): Unit = callback(value)
-
-  case class Effect[A](f: () => A) extends ZIO[A]:
-    override def run(callback: A => Unit): Unit = callback(f())
-
-  case class FlatMap[A, B](az: ZIO[A], f: A => ZIO[B]) extends ZIO[B]:
-    override def run(callback: B => Unit): Unit =
-      az.run { a =>
-        f(a).run(callback)
-      }
-  case class Async[A](register: (A => Any) => Any) extends ZIO[A]:
-    override def run(callback: A => Unit): Unit =
-      register(callback)
-  case class Fork[A](zio: ZIO[A]) extends ZIO[Fiber[A]]:
-    override def run(callback: Fiber[A] => Unit): Unit =
-      val fiber = FiberImpl(zio)
-      fiber.start()
-      callback(fiber)
+  case class Succeed[A](value: A)                      extends ZIO[A]
+  case class Effect[A](f: () => A)                     extends ZIO[A]
+  case class FlatMap[A, B](az: ZIO[A], f: A => ZIO[B]) extends ZIO[B]
+  case class Async[A](register: (A => Any) => Any)     extends ZIO[A]
+  case class Fork[A](zio: ZIO[A])                      extends ZIO[Fiber[A]]
