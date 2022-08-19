@@ -125,3 +125,8 @@ object zipPar extends ZIOApp:
     complete(scala.util.Random.nextInt(999))
   }
   override def run: ZIO[Any] = asyncZIO `zipPar` asyncZIO
+
+object stackSafety extends ZIOApp:
+  val program =
+    ZIO.succeed(println("Hey!")).repeatN(10)
+  override def run: ZIO[Any] = program

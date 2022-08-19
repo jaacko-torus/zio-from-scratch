@@ -27,7 +27,7 @@ class FiberImpl[A](zio: ZIO[A]) extends Fiber[A]:
       }
 
 sealed trait ZIO[+A] { self =>
-  def run(callback: A => Unit): Unit
+  final def run(callback: A => Unit): Unit = ???
 
   def flatMap[B](f: A => ZIO[B]): ZIO[B] =
     ZIO.FlatMap(self, f)
@@ -36,13 +36,26 @@ sealed trait ZIO[+A] { self =>
     flatMap { a => ZIO.succeedNow(f(a)) }
 
   def zip[B](that: ZIO[B]): ZIO[(A, B)] =
+    (self `zipWith` that)((_, _))
+
+  def zipRight[B](that: ZIO[B]): ZIO[B] =
+    (self `zipWith` that)((_, b) => b)
+
+  def *>[B](that: ZIO[B]): ZIO[B] =
+    (self `zipRight` that)
+
+  def zipWith[B, C](that: ZIO[B])(f: (A, B) => C): ZIO[C] =
     for
       a <- self
       b <- that
-    yield (a, b)
+    yield f(a, b)
 
   def as[B](value: => B): ZIO[B] =
     self.map(_ => value)
+
+  def repeatN(n: Int): ZIO[Any] =
+    if n <= 0 then ZIO.succeedNow(())
+    else self *> repeatN(n - 1)
 
   def fork: ZIO[Fiber[A]] = ZIO.Fork(self)
 

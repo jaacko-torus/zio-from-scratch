@@ -5,3 +5,4 @@ package zio_from_scratch
 import ziofs.*
 
 @main def main = println("Hello World")
+
